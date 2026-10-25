@@ -88,20 +88,31 @@ input[type=search]{font:400 .9rem var(--body);padding:8px 10px;border-radius:6px
 .legend{display:flex;gap:14px;font:500 .75rem var(--mono);color:var(--muted)}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
 footer{font-size:.75rem;color:var(--muted)}
-/* modo TV: só placar, números e gráfico, letras grandes */
-body.tv{font-size:20px}
-body.tv .tvhide{display:none!important}
-body.tv .wrap{max-width:1500px;gap:24px}
-body.tv h1{font-size:3rem}
-body.tv .cand .nm{font-size:2rem}
-body.tv .cand .num,body.tv .cand .votes{font-size:1.2rem}
-body.tv .cand .pct{font-size:clamp(4rem,12vw,9rem)}
-body.tv .bar{height:30px}
-body.tv .diff{font-size:1.4rem}
-body.tv .kv{grid-template-columns:repeat(6,1fr)}
-body.tv .kv b{font-size:2rem}
-body.tv .label{font-size:.95rem}
-body.tv .note{font-size:1rem}
+/* torcida: tema por candidato (cores e número; sem logotipos de partido) */
+.fanpick{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.fanpick .label{margin-right:4px}
+.fanpick button[data-fan="13"][aria-pressed="true"]{background:var(--c13);border-color:var(--c13);color:#fff}
+.fanpick button[data-fan="22"][aria-pressed="true"]{background:var(--c22);border-color:var(--c22);color:#fff}
+.fanband{display:none;position:relative;overflow:hidden;border-radius:12px;padding:16px 18px;color:#fff;align-items:center;justify-content:space-between;gap:12px}
+.fanband .t{display:flex;flex-direction:column;gap:2px;position:relative;z-index:1}
+.fanband .t small{font:500 .72rem/1.2 var(--mono);text-transform:uppercase;letter-spacing:.12em;opacity:.85}
+.fanband .t b{font:700 2rem/1 var(--display);text-transform:uppercase;letter-spacing:.03em}
+.fanband .n{font:700 4.6rem/.8 var(--display);position:relative;z-index:1;font-variant-numeric:tabular-nums}
+body.fan13 .fanband,body.fan22 .fanband{display:flex}
+body.fan13 .fanband{background-color:#b3141c;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cpath d='M28 8l5.3 12.1 13.2 1.2-10 8.7 3 12.9L28 36.1l-11.5 6.8 3-12.9-10-8.7 13.2-1.2z' fill='%23ffffff' fill-opacity='.16'/%3E%3C/svg%3E")}
+body.fan22 .fanband{background-color:#163f86;background-image:repeating-linear-gradient(135deg,transparent 0 22px,rgba(242,194,48,.28) 22px 30px)}
+body.fan22 .fanband .n{color:#f2c230}
+body.fan22 .fanband::after{content:"";position:absolute;left:0;right:0;bottom:0;height:6px;background:#f2c230}
+body.fan13 .fanband::after{content:"";position:absolute;left:0;right:0;bottom:0;height:6px;background:#fff;opacity:.85}
+body.fan13{background:color-mix(in srgb,var(--c13) 9%,var(--bg))}
+body.fan22{background:color-mix(in srgb,var(--c22) 9%,var(--bg))}
+body.fan13 .panel{border-color:color-mix(in srgb,var(--c13) 40%,var(--line))}
+body.fan22 .panel{border-color:color-mix(in srgb,var(--c22) 40%,var(--line))}
+body.fan13 h1,body.fan13 h2{color:var(--c13)}
+body.fan22 h1,body.fan22 h2{color:var(--c22)}
+body.fan22 .panel{box-shadow:inset 0 3px 0 #f2c230}
+body.fan13 .panel{box-shadow:inset 0 3px 0 var(--c13)}
+@media (prefers-reduced-motion:no-preference){.fanband .n{animation:pop .5s ease-out}@keyframes pop{from{transform:scale(.85);opacity:0}}}
 </style>
 </head>
 <body>
@@ -117,14 +128,21 @@ body.tv .note{font-size:1rem}
     </div>
   </header>
 
-  <div class="controls tvhide" role="group" aria-label="Turno">
+  <div class="fanband" id="fanband" aria-live="polite"><div class="t"><small>Torcendo por</small><b id="fannome"></b></div><span class="n" id="fannum"></span></div>
+
+  <div class="controls" role="group" aria-label="Turno">
     <button id="b2" aria-pressed="true">2º turno (ao vivo)</button>
     <button id="b1" aria-pressed="false">1º turno (teste)</button>
     <button id="bnow">Atualizar agora</button>
-    <button id="bcast">Transmitir para TV</button>
   </div>
 
-  <div id="castmsg" class="msg" hidden></div>
+  <div class="fanpick" role="group" aria-label="Sua torcida">
+    <span class="label">Sua torcida</span>
+    <button data-fan="" aria-pressed="true">Nenhuma</button>
+    <button data-fan="13" aria-pressed="false">Lula · 13</button>
+    <button data-fan="22" aria-pressed="false">Flávio · 22</button>
+  </div>
+
   <div id="aviso" class="msg" hidden></div>
 
   <section class="panel" aria-live="polite">
@@ -150,7 +168,7 @@ body.tv .note{font-size:1rem}
     <p class="note">Eixo horizontal: % de seções totalizadas. Pontos gravados neste navegador desde que a página foi aberta.</p>
   </section>
 
-  <section class="panel tvhide">
+  <section class="panel">
     <div class="row"><h2>Detalhar</h2><span class="label" id="lvlinfo"></span></div>
     <nav class="crumbs" id="crumbs" aria-label="Nível"></nav>
     <input type="search" id="busca" placeholder="Buscar município" hidden>
@@ -164,12 +182,12 @@ body.tv .note{font-size:1rem}
     <p class="note" id="lvlnote"></p>
   </section>
 
-  <section class="panel tvhide">
+  <section class="panel">
     <h2>Bairro, local de votação e seção</h2>
     <p class="note">O TSE não publica resultado por bairro, local ou seção durante a apuração. Ao vivo, o menor nível é o município (e a zona, se o TSE liberar). O resultado por seção sai depois, nos dados abertos do TSE, junto com o arquivo de locais de votação, que traz endereço e bairro de cada local.</p>
   </section>
 
-  <footer class="tvhide">Dados: TSE – Divulgação de Resultados (resultados.tse.jus.br), arquivos públicos EA20. Painel independente, sem vínculo oficial. Resultado oficial só no site do TSE.</footer>
+  <footer>Dados: TSE – Divulgação de Resultados (resultados.tse.jus.br), arquivos públicos EA20. Painel independente, sem vínculo oficial. Resultado oficial só no site do TSE.</footer>
 </div>
 
 <script>
@@ -378,27 +396,18 @@ body.tv .note{font-size:1rem}
   $("bnow").onclick=()=>{left=-1;tick(true)};
 
   drawChart();renderCrumbs();
-  // ---------- transmitir para TV ----------
-  const isTV=qs.get("tv")==="1";
-  if(isTV) document.body.classList.add("tv");
-  const tvUrl=location.origin+location.pathname+"?tv=1";
-  let castReq=null;
-  try{ if(window.PresentationRequest) castReq=new PresentationRequest([tvUrl]); }catch(e){castReq=null}
-  function castHelp(extra){
-    $("castmsg").hidden=false;
-    $("castmsg").innerHTML=(extra?extra+" ":"")+
-      "Outras formas: no Android, abra a barra de notificações e toque em <b>Transmitir tela</b> (ou Smart View / Espelhar). No Chrome do computador, use o menu ⋮ › <b>Transmitir</b>. Se a TV tiver navegador, abra nela o endereço <b>"+esc(tvUrl)+"</b>.";
+  // ---------- torcida ----------
+  function setFan(f){
+    document.body.classList.remove("fan13","fan22");
+    if(f) document.body.classList.add("fan"+f);
+    document.querySelectorAll(".fanpick button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.fan===f)));
+    $("fannome").textContent=f==="13"?"Lula":f==="22"?"Flávio Bolsonaro":"";
+    $("fannum").textContent=f||"";
+    try{localStorage.setItem("torcida",f)}catch(e){}
   }
-  $("bcast").onclick=()=>{
-    if(!castReq){castHelp("Este navegador não envia a página direto para a TV.");return}
-    castReq.start().then(c=>{
-      $("castmsg").hidden=false;$("castmsg").textContent="Transmitindo para a TV. A TV busca os dados sozinha; pode bloquear o celular.";
-      c.onterminate=c.onclose=()=>{$("castmsg").hidden=true};
-    }).catch(e=>{
-      if(e&&e.name==="AbortError") return; // usuário fechou a lista
-      castHelp("O navegador não conseguiu enviar a página direto para a TV (diferente do YouTube, uma página não enxerga todas as TVs).");
-    });
-  };
+  document.querySelectorAll(".fanpick button").forEach(b=>b.addEventListener("click",()=>setFan(b.dataset.fan)));
+  let fan0="";try{fan0=localStorage.getItem("torcida")||""}catch(e){}
+  setFan(fan0==="13"||fan0==="22"?fan0:"");
 
   setTurno(EL);
   setInterval(countdown,1000);
