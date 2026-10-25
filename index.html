@@ -137,6 +137,13 @@ body.fan13 .panel{box-shadow:inset 0 3px 0 var(--c13)}
 .mapcount i{width:14px;height:14px;border-radius:3px;flex:none}
 .mapcount b{font:700 1.6rem/1 var(--display);font-variant-numeric:tabular-nums;margin-left:auto}
 .mapinfo{font:500 .85rem var(--mono);font-variant-numeric:tabular-nums;border-top:1px solid var(--line);padding-top:10px;min-height:4.5em}
+/* faixa de eleito */
+.eleito{display:none;border-radius:12px;padding:18px 20px;color:#fff;flex-direction:column;gap:6px;text-align:center}
+.eleito.on{display:flex}
+.eleito.c13{background:var(--c13)} .eleito.c22{background:var(--c22)}
+.eleito b{font:700 clamp(2.2rem,8vw,4rem)/1 var(--display);text-transform:uppercase;letter-spacing:.03em}
+.eleito small{font:500 .85rem/1.4 var(--mono);opacity:.92}
+@media (prefers-reduced-motion:no-preference){.eleito.on b{animation:pop .6s ease-out}@keyframes pop{from{transform:scale(.85);opacity:0}}}
 </style>
 </head>
 <body>
@@ -168,6 +175,8 @@ body.fan13 .panel{box-shadow:inset 0 3px 0 var(--c13)}
   </div>
 
   <div id="aviso" class="msg" hidden></div>
+
+  <div class="eleito" id="eleito" role="status" aria-live="assertive"><b id="eleitonome"></b><small id="eleitotxt"></small></div>
 
   <section class="panel" aria-live="polite">
     <div class="cands">
@@ -278,15 +287,27 @@ body.fan13 .panel{box-shadow:inset 0 3px 0 var(--c13)}
 
   // ---------- topo ----------
   function setStatus(cls,txt){$("st").className="pill "+cls;$("st").innerHTML='<span class="dot"></span>'+txt}
-  function candHTML(c,r){
-    const eleito=(c.e==="s"||/eleito/i.test(c.st))&&!/não/i.test(c.st);
+  const oficialEleito=c=>(c.e==="s"||/eleito/i.test(c.st))&&!/não/i.test(c.st);
+  function candHTML(c,r,mat){
+    const eleito=oficialEleito(c)||mat;
     return `<span class="nm">${NAMES[c.n]||esc(c.nm)}</span><span class="num">${c.sg?esc(c.sg)+" · ":""}${c.n}</span>
       <span class="pct">${pct(r.vv?c.pvap:0)}</span><span class="votes">${fmt(c.vap)} votos</span>${eleito?'<span class="badge">Eleito</span>':""}`;
   }
   function renderTop(r){
     const {a,b}=r;
-    $("ca").innerHTML=candHTML(a,r);$("cb").innerHTML=candHTML(b,r);
     const tot=a.vap+b.vap,pa=tot?a.vap/tot*100:50;
+    // eleito: oficial do TSE, ou matemático (diferença maior que todos os eleitores que ainda faltam)
+    const resta=Math.max(0,r.te-r.est), lead=Math.abs(a.vap-b.vap);
+    const lider=a.vap>b.vap?a:b, oficial=oficialEleito(a)?a:oficialEleito(b)?b:null;
+    const mat=!oficial&&tot>0&&r.te>0&&lead>resta;
+    const vencedor=oficial||(mat?lider:null);
+    $("ca").innerHTML=candHTML(a,r,mat&&lider===a);$("cb").innerHTML=candHTML(b,r,mat&&lider===b);
+    const el=$("eleito");
+    if(vencedor){
+      el.className="eleito on c"+vencedor.n;
+      $("eleitonome").textContent=(NAMES[vencedor.n]||vencedor.nm)+" eleito";
+      $("eleitotxt").textContent=oficial?"Confirmado pelo TSE.":`Matematicamente: a diferença é de ${fmt(lead)} votos e só faltam ${fmt(resta)} eleitores nas urnas não apuradas. Não dá mais para virar. Falta a confirmação oficial do TSE.`;
+    } else el.className="eleito";
     $("ba").style.width=pa+"%";$("bb").style.width=(100-pa)+"%";
     const d=a.vap-b.vap;
     $("diff").textContent=tot?`${d>=0?"Lula":"Flávio"} à frente por ${fmt(Math.abs(d))} votos (${pct(Math.abs(a.pvap-b.pvap))} p.p.)`:"Sem votos totalizados ainda";
