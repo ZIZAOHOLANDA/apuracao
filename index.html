@@ -396,7 +396,7 @@ body.tv .note{font-size:1rem}
       c.onterminate=c.onclose=()=>{$("castmsg").hidden=true};
     }).catch(e=>{
       if(e&&e.name==="AbortError") return; // usuário fechou a lista
-      castHelp("Nenhuma TV com Chromecast foi encontrada na rede.");
+      castHelp("O navegador não conseguiu enviar a página direto para a TV (diferente do YouTube, uma página não enxerga todas as TVs).");
     });
   };
 
