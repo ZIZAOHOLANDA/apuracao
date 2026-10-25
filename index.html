@@ -212,7 +212,7 @@ body.fan13 .panel{box-shadow:inset 0 3px 0 var(--c13)}
   const NAMES={"13":"Lula","22":"Flávio Bolsonaro"};
   const qs=new URLSearchParams(location.search);
   let EL=qs.get("eleicao")||T2;
-  const INTERVAL=30, UF_EVERY=120, MUN_EVERY=180;
+  const INTERVAL=10, UF_EVERY=120, MUN_EVERY=180;
 
   // estado
   let left=0, lastUf=0, lastLvl=0, busy=false;
