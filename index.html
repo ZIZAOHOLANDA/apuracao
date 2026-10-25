@@ -88,6 +88,20 @@ input[type=search]{font:400 .9rem var(--body);padding:8px 10px;border-radius:6px
 .legend{display:flex;gap:14px;font:500 .75rem var(--mono);color:var(--muted)}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
 footer{font-size:.75rem;color:var(--muted)}
+/* modo TV: só placar, números e gráfico, letras grandes */
+body.tv{font-size:20px}
+body.tv .tvhide{display:none!important}
+body.tv .wrap{max-width:1500px;gap:24px}
+body.tv h1{font-size:3rem}
+body.tv .cand .nm{font-size:2rem}
+body.tv .cand .num,body.tv .cand .votes{font-size:1.2rem}
+body.tv .cand .pct{font-size:clamp(4rem,12vw,9rem)}
+body.tv .bar{height:30px}
+body.tv .diff{font-size:1.4rem}
+body.tv .kv{grid-template-columns:repeat(6,1fr)}
+body.tv .kv b{font-size:2rem}
+body.tv .label{font-size:.95rem}
+body.tv .note{font-size:1rem}
 </style>
 </head>
 <body>
@@ -103,12 +117,14 @@ footer{font-size:.75rem;color:var(--muted)}
     </div>
   </header>
 
-  <div class="controls" role="group" aria-label="Turno">
+  <div class="controls tvhide" role="group" aria-label="Turno">
     <button id="b2" aria-pressed="true">2º turno (ao vivo)</button>
     <button id="b1" aria-pressed="false">1º turno (teste)</button>
     <button id="bnow">Atualizar agora</button>
+    <button id="bcast">Transmitir para TV</button>
   </div>
 
+  <div id="castmsg" class="msg" hidden></div>
   <div id="aviso" class="msg" hidden></div>
 
   <section class="panel" aria-live="polite">
@@ -134,7 +150,7 @@ footer{font-size:.75rem;color:var(--muted)}
     <p class="note">Eixo horizontal: % de seções totalizadas. Pontos gravados neste navegador desde que a página foi aberta.</p>
   </section>
 
-  <section class="panel">
+  <section class="panel tvhide">
     <div class="row"><h2>Detalhar</h2><span class="label" id="lvlinfo"></span></div>
     <nav class="crumbs" id="crumbs" aria-label="Nível"></nav>
     <input type="search" id="busca" placeholder="Buscar município" hidden>
@@ -148,12 +164,12 @@ footer{font-size:.75rem;color:var(--muted)}
     <p class="note" id="lvlnote"></p>
   </section>
 
-  <section class="panel">
+  <section class="panel tvhide">
     <h2>Bairro, local de votação e seção</h2>
     <p class="note">O TSE não publica resultado por bairro, local ou seção durante a apuração. Ao vivo, o menor nível é o município (e a zona, se o TSE liberar). O resultado por seção sai depois, nos dados abertos do TSE, junto com o arquivo de locais de votação, que traz endereço e bairro de cada local.</p>
   </section>
 
-  <footer>Dados: TSE – Divulgação de Resultados (resultados.tse.jus.br), arquivos públicos EA20. Painel independente, sem vínculo oficial. Resultado oficial só no site do TSE.</footer>
+  <footer class="tvhide">Dados: TSE – Divulgação de Resultados (resultados.tse.jus.br), arquivos públicos EA20. Painel independente, sem vínculo oficial. Resultado oficial só no site do TSE.</footer>
 </div>
 
 <script>
@@ -362,6 +378,28 @@ footer{font-size:.75rem;color:var(--muted)}
   $("bnow").onclick=()=>{left=-1;tick(true)};
 
   drawChart();renderCrumbs();
+  // ---------- transmitir para TV ----------
+  const isTV=qs.get("tv")==="1";
+  if(isTV) document.body.classList.add("tv");
+  const tvUrl=location.origin+location.pathname+"?tv=1";
+  let castReq=null;
+  try{ if(window.PresentationRequest) castReq=new PresentationRequest([tvUrl]); }catch(e){castReq=null}
+  function castHelp(extra){
+    $("castmsg").hidden=false;
+    $("castmsg").innerHTML=(extra?extra+" ":"")+
+      "Outras formas: no Android, abra a barra de notificações e toque em <b>Transmitir tela</b> (ou Smart View / Espelhar). No Chrome do computador, use o menu ⋮ › <b>Transmitir</b>. Se a TV tiver navegador, abra nela o endereço <b>"+esc(tvUrl)+"</b>.";
+  }
+  $("bcast").onclick=()=>{
+    if(!castReq){castHelp("Este navegador não envia a página direto para a TV.");return}
+    castReq.start().then(c=>{
+      $("castmsg").hidden=false;$("castmsg").textContent="Transmitindo para a TV. A TV busca os dados sozinha; pode bloquear o celular.";
+      c.onterminate=c.onclose=()=>{$("castmsg").hidden=true};
+    }).catch(e=>{
+      if(e&&e.name==="AbortError") return; // usuário fechou a lista
+      castHelp("Nenhuma TV com Chromecast foi encontrada na rede.");
+    });
+  };
+
   setTurno(EL);
   setInterval(countdown,1000);
 })();
