@@ -144,6 +144,16 @@ body.fan13 .panel{box-shadow:inset 0 3px 0 var(--c13)}
 .eleito b{font:700 clamp(2.2rem,8vw,4rem)/1 var(--display);text-transform:uppercase;letter-spacing:.03em}
 .eleito small{font:500 .85rem/1.4 var(--mono);opacity:.92}
 @media (prefers-reduced-motion:no-preference){.eleito.on b{animation:pop .6s ease-out}@keyframes pop{from{transform:scale(.85);opacity:0}}}
+/* boletim de urna da seção */
+.bu{border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;background:var(--bg)}
+.bu .top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.bu h3{font:600 1.2rem/1 var(--display);text-transform:uppercase;letter-spacing:.04em;margin:0}
+.bu .vs{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.bu .vs div{display:flex;flex-direction:column;gap:2px}
+.bu .vs b{font:700 2rem/1 var(--display);font-variant-numeric:tabular-nums}
+.bu .vs .r{text-align:right}
+.bu pre{font:400 .72rem/1.35 var(--mono);white-space:pre;overflow-x:auto;max-height:420px;margin:0;padding:10px;border-radius:6px;background:var(--panel);border:1px solid var(--line)}
+td.secinfo{text-align:left;color:var(--muted);font-size:.8rem;white-space:normal}
 </style>
 </head>
 <body>
@@ -207,6 +217,7 @@ body.fan13 .panel{box-shadow:inset 0 3px 0 var(--c13)}
     <nav class="crumbs" id="crumbs" aria-label="Nível"></nav>
     <input type="search" id="busca" placeholder="Buscar município" hidden>
     <div id="lvlmsg" class="msg" hidden></div>
+    <div id="budetail" class="bu" hidden></div>
     <div class="tbl"><table>
       <thead><tr>
         <th data-k="nm">Local</th><th data-k="pst">Totaliz.</th><th data-k="a">Lula</th><th data-k="b">Flávio</th>
@@ -245,6 +256,7 @@ body.fan13 .panel{box-shadow:inset 0 3px 0 var(--c13)}
 (function(){
   const BASE="https://resultados.tse.jus.br/oficial/ele2026/";
   const T1="6257", T2="6258"; // 1º turno só para o modo teste
+  const PLEITO={"6257":"3220","6258":"3221"}; // arquivos de urna (seções)
   const UFS=["ac","al","am","ap","ba","ce","df","es","go","ma","mg","ms","mt","pa","pb","pe","pi","pr","rj","rn","ro","rr","rs","sc","se","sp","to","zz"];
   const UFNOME={ac:"Acre",al:"Alagoas",am:"Amazonas",ap:"Amapá",ba:"Bahia",ce:"Ceará",df:"Distrito Federal",es:"Espírito Santo",go:"Goiás",ma:"Maranhão",mg:"Minas Gerais",ms:"Mato Grosso do Sul",mt:"Mato Grosso",pa:"Pará",pb:"Paraíba",pe:"Pernambuco",pi:"Piauí",pr:"Paraná",rj:"Rio de Janeiro",rn:"Rio Grande do Norte",ro:"Rondônia",rr:"Roraima",rs:"Rio Grande do Sul",sc:"Santa Catarina",se:"Sergipe",sp:"São Paulo",to:"Tocantins",zz:"Exterior"};
   const NAMES={"13":"Lula","22":"Flávio Bolsonaro"};
@@ -255,7 +267,8 @@ body.fan13 .panel{box-shadow:inset 0 3px 0 var(--c13)}
   // estado
   let left=0, lastUf=0, lastLvl=0, busy=false;
   let ufNow={}, munCfg=null, munCfgEl=null;
-  let lvl={k:"br"}; // {k:"br"} | {k:"uf",uf} | {k:"mun",uf,cd,nm,zonas}
+  let lvl={k:"br"}; // {k:"br"} | {k:"uf",uf} | {k:"mun",uf,cd,nm,zonas} | {k:"zona",uf,cd,nm,zona}
+  const csCache={};
   let rows=[], sortK="nm", sortDir=1, zonaOff=false;
 
   const $=id=>document.getElementById(id);
@@ -381,12 +394,22 @@ body.fan13 .panel{box-shadow:inset 0 3px 0 var(--c13)}
         else{
           // busca todas as zonas; uma zona sem arquivo não derruba as outras
           $("lvlnote").textContent=`Carregando ${zonas.length} zona(s)…`;
-          const res=await pool(zonas,4,async z=>{const r=parse(await getJSON(fileU(EL,lvl.uf,lvl.cd,z)));return rowFrom(z,"Zona "+z,r,false)});
+          const res=await pool(zonas,4,async z=>{const r=parse(await getJSON(fileU(EL,lvl.uf,lvl.cd,z)));return rowFrom(z,"Zona "+z,r,true)});
           rows=res.filter(Boolean);
           const faltam=zonas.length-rows.length;
           if(!rows.length){$("lvlmsg").hidden=false;$("lvlmsg").textContent="O TSE ainda não publicou resultado por zona para este município.";}
-          $("lvlnote").textContent=`${rows.length} de ${zonas.length} zona(s) com resultado`+(faltam?` · ${faltam} sem arquivo no TSE`:"")+".";
+          $("lvlnote").textContent=`${rows.length} de ${zonas.length} zona(s) com resultado`+(faltam?` · ${faltam} sem arquivo no TSE`:"")+". Toque em Abrir para ver as seções.";
         }
+      } else if(lvl.k==="zona"){
+        $("lvlnote").textContent="Carregando a lista de seções…";
+        const cs=await loadCS(lvl.uf);
+        const abr=(cs.abr||[]).find(a=>String(a.cd||"").toLowerCase()===lvl.uf)||(cs.abr||[])[0]||{};
+        const mu=(abr.mu||[]).find(m=>Number(m.cd)===Number(lvl.cd));
+        const zon=mu&&(mu.zon||[]).find(z=>Number(z.cd)===Number(lvl.zona));
+        const secs=(zon&&zon.sec)||[];
+        rows=secs.map(x=>{const ns=String(x.ns).padStart(4,"0");return {id:ns,nm:"Seção "+ns,sec:true,nsp:x.nsp?String(x.nsp).padStart(4,"0"):"",pst:0,a:0,b:0,va:0,vb:0,dif:0}});
+        if(!rows.length){$("lvlmsg").hidden=false;$("lvlmsg").textContent="O TSE ainda não publicou a lista de seções desta zona.";$("lvlnote").textContent="";}
+        else $("lvlnote").textContent=`${rows.length} seções. Toque em Ver para abrir o boletim de urna da seção.`;
       }
     }catch(e){
       rows=[];$("lvlmsg").hidden=false;$("lvlmsg").textContent=`Não consegui carregar este nível (${e.message}). Tente “Atualizar agora”.`;
@@ -398,9 +421,11 @@ body.fan13 .panel{box-shadow:inset 0 3px 0 var(--c13)}
     let info="Estados";
     if(lvl.k!=="br"){parts.push('<span class="sep">›</span>',lvl.k==="uf"?`<span class="cur">${UFNOME[lvl.uf]}</span>`:`<button data-go="uf">${UFNOME[lvl.uf]}</button>`);info="Municípios"}
     if(lvl.k==="mun"){parts.push('<span class="sep">›</span>',`<span class="cur">${esc(lvl.nm)}</span>`);info="Zonas"}
+    if(lvl.k==="zona"){parts.push('<span class="sep">›</span>',`<button data-go="mun">${esc(lvl.nm)}</button>`,'<span class="sep">›</span>',`<span class="cur">Zona ${esc(lvl.zona)}</span>`);info="Seções"}
     if(lvl.k==="br") parts[0]='<span class="cur">Brasil</span>';
     $("crumbs").innerHTML=parts.join("");$("lvlinfo").textContent=info;
-    $("busca").hidden=lvl.k!=="uf";
+    $("busca").hidden=!(lvl.k==="uf"||lvl.k==="zona");
+    $("busca").placeholder=lvl.k==="zona"?"Buscar seção":"Buscar município";
   }
   function renderLevel(){
     renderCrumbs();
@@ -409,6 +434,8 @@ body.fan13 .panel{box-shadow:inset 0 3px 0 var(--c13)}
     list.sort((x,y)=>{const a=x[sortK],b=y[sortK];return (typeof a==="string"?a.localeCompare(b,"pt-BR"):(a-b))*sortDir});
     if(!list.length){$("lista").innerHTML=`<tr><td colspan="6" class="note">${rows.length?"Nenhum resultado para a busca.":"Sem dados neste nível ainda."}</td></tr>`;return}
     $("lista").innerHTML=list.map(r=>{
+      if(r.sec) return `<tr><td class="nm">${esc(r.nm)}</td><td colspan="4" class="secinfo">${r.nsp?"Agregada à seção "+esc(r.nsp):"Boletim de urna"}</td>
+        <td>${r.nsp?"":`<button class="open" data-sec="${esc(r.id)}" aria-label="Ver ${esc(r.nm)}">Ver ›</button>`}</td></tr>`;
       const has=r.va+r.vb>0;
       return `<tr><td class="nm" title="${esc(r.nm)}">${esc(r.nm)}</td><td>${pct(r.pst,1)}</td>
         <td class="${has&&r.dif>0?"lead13":""}">${pct(r.a)}</td><td class="${has&&r.dif<0?"lead22":""}">${pct(r.b)}</td>
@@ -416,17 +443,74 @@ body.fan13 .panel{box-shadow:inset 0 3px 0 var(--c13)}
         <td>${r.open?`<button class="open" data-open="${esc(r.id)}" aria-label="Abrir ${esc(r.nm)}">Abrir ›</button>`:""}</td></tr>`}).join("");
   }
   $("lista").addEventListener("click",e=>{
+    const sb=e.target.closest("[data-sec]");if(sb){showBU(sb.dataset.sec);return}
     const b=e.target.closest("[data-open]");if(!b)return;const id=b.dataset.open;
+    $("budetail").hidden=true;
     if(lvl.k==="br"){lvl={k:"uf",uf:id};sortK="nm";sortDir=1;$("busca").value=""}
     else if(lvl.k==="uf"){const m=(munCfg[lvl.uf]||[]).find(x=>x.cd===id);lvl={k:"mun",uf:lvl.uf,cd:id,nm:m?m.nm:id,zonas:m?m.z:[]};sortK="nm";sortDir=1}
+    else if(lvl.k==="mun"){lvl={k:"zona",uf:lvl.uf,cd:lvl.cd,nm:lvl.nm,zonas:lvl.zonas,zona:id};sortK="nm";sortDir=1;$("busca").value=""}
     rows=[];$("lista").innerHTML='<tr><td colspan="6" class="note">Carregando…</td></tr>';loadLevel();
   });
   $("crumbs").addEventListener("click",e=>{
     const b=e.target.closest("[data-go]");if(!b)return;
-    lvl=b.dataset.go==="br"?{k:"br"}:{k:"uf",uf:lvl.uf};rows=[];loadLevel();
+    const g=b.dataset.go;$("budetail").hidden=true;
+    lvl=g==="br"?{k:"br"}:g==="mun"?{k:"mun",uf:lvl.uf,cd:lvl.cd,nm:lvl.nm,zonas:lvl.zonas}:{k:"uf",uf:lvl.uf};rows=[];loadLevel();
   });
   $("busca").addEventListener("input",renderLevel);
   document.querySelectorAll("th[data-k]").forEach(th=>th.addEventListener("click",()=>{const k=th.dataset.k;sortDir=sortK===k?-sortDir:(k==="nm"?1:-1);sortK=k;renderLevel()}));
+
+  // ---------- seções e boletim de urna ----------
+  const URNA=()=>`${BASE}arquivo-urna/${PLEITO[EL]}/`;
+  async function loadCS(uf){
+    const k=EL+uf; if(csCache[k]) return csCache[k];
+    const pl=PLEITO[EL];
+    return csCache[k]=await getJSON(`${URNA()}config/${uf}/${uf}-p${pad6(pl)}-cs.json`);
+  }
+  function limparBU(txt){
+    const t=txt.replace(/\x1b\[[0-?]*[ -\/]*[@-~]/g,"").replace(/\x1b[\s\S]/g,"").replace(/\r/g,"").replace(/[\x00-\x08\x0b-\x1f\x7f]/g,"");
+    // descarta linhas de lixo (ex.: bitmap do QR code no fim)
+    return t.split("\n").filter(l=>{const s=l.trim();if(!s)return true;const ok=(s.match(/[A-Za-z0-9À-ÿ .,:;\-\/()ºª%#*=_]/g)||[]).length;return ok/s.length>.85}).join("\n").replace(/\n{3,}/g,"\n\n").trim();
+  }
+  function lerVotos(txt){
+    const i=txt.search(/presidente/i); const t=i>=0?txt.slice(i):txt;
+    const v={};
+    for(const n of ["13","22"]){const m=t.match(new RegExp("^[^\\n]*?\\s"+n+"\\s+(\\d[\\d.]*)\\s*$","m"));if(m)v[n]=Number(m[1].replace(/\./g,""))}
+    const pega=(re,src)=>{const m=(src||t).match(re);return m?Number(m[1].replace(/\./g,"")):null};
+    v.brancos=pega(/brancos?\D{0,30}?(\d[\d.]*)/i); v.nulos=pega(/nulos?\D{0,30}?(\d[\d.]*)/i);
+    v.aptos=pega(/eleitores\s+aptos\D{0,30}?(\d[\d.]*)/i,txt); v.comp=pega(/comparecimento\D{0,30}?(\d[\d.]*)/i,txt);
+    return v;
+  }
+  async function showBU(ns){
+    const box=$("budetail"); box.hidden=false;
+    const uf=lvl.uf, mun=String(lvl.cd).padStart(5,"0"), zona=String(lvl.zona).padStart(4,"0"), sec=String(ns).padStart(4,"0"), pl=PLEITO[EL];
+    const titulo=`<div class="top"><h3>Seção ${sec} · Zona ${zona}</h3><button id="bufechar">Fechar</button></div>`;
+    box.innerHTML=titulo+'<p class="note">Buscando o boletim de urna no TSE…</p>';
+    const fechar=()=>{const f=$("bufechar");if(f)f.onclick=()=>{box.hidden=true}};fechar();
+    box.scrollIntoView({behavior:"smooth",block:"nearest"});
+    const dir=`${URNA()}dados/${uf}/${mun}/${zona}/${sec}/`;
+    try{
+      const aux=await getJSON(`${dir}p${pad6(pl)}-${uf}-m${mun}-z${zona}-s${sec}-aux.json`);
+      const hs=(aux.hashes||[]).filter(h=>h.hash&&h.hash!=="0");
+      const h=hs.filter(x=>/^totalizad/i.test(x.st||"")).pop()||hs.pop();
+      if(!h){box.innerHTML=titulo+`<p class="note">Seção sem boletim publicado. Situação no TSE: ${esc(aux.st||"—")}.</p>`;fechar();return}
+      const nomes=[];(h.arq||[]).forEach(a=>{if(a&&a.nm)nomes.push(a.nm)});(h.nmarq||[]).forEach(n=>nomes.push(n));
+      const img=nomes.find(n=>/imgbu/i.test(n));
+      if(!img){box.innerHTML=titulo+`<p class="note">O TSE publicou o boletim desta seção só no formato binário, sem a versão em texto. Situação: ${esc(h.st||aux.st||"—")}.</p>`;fechar();return}
+      const r=await fetch(dir+h.hash+"/"+img,{cache:"no-cache"}); if(!r.ok) throw new Error("HTTP "+r.status);
+      const txt=limparBU(new TextDecoder("windows-1252").decode(await r.arrayBuffer()));
+      const v=lerVotos(txt);
+      const tem=v["13"]!=null&&v["22"]!=null;
+      const nomv=(v["13"]||0)+(v["22"]||0);
+      box.innerHTML=titulo+(tem?`<div class="vs"><div><span class="label">Lula · 13</span><b style="color:var(--c13)">${fmt(v["13"])}</b><small class="note">${nomv?pct(v["13"]/nomv*100):"—"}</small></div>
+        <div class="r"><span class="label">Flávio · 22</span><b style="color:var(--c22)">${fmt(v["22"])}</b><small class="note">${nomv?pct(v["22"]/nomv*100):"—"}</small></div></div>
+        <p class="note">${[v.aptos!=null?"Eleitores aptos: "+fmt(v.aptos):"",v.comp!=null?"Comparecimento: "+fmt(v.comp):"",v.brancos!=null?"Brancos: "+fmt(v.brancos):"",v.nulos!=null?"Nulos: "+fmt(v.nulos):""].filter(Boolean).join(" · ")}</p>`
+        :`<p class="note">Não consegui ler os votos automaticamente. Abaixo está o boletim como o TSE publicou.</p>`)+
+        `<details${tem?"":" open"}><summary class="label">Boletim de urna (texto do TSE)</summary><pre>${esc(txt)}</pre></details>`;
+      fechar();
+    }catch(e){
+      box.innerHTML=titulo+`<p class="note">Não consegui abrir o boletim desta seção (${esc(e.message)}). Se a seção ainda não foi apurada, o arquivo aparece depois.</p>`;fechar();
+    }
+  }
 
   // ---------- estados + base ----------
   // ---------- mapa por estado ----------
