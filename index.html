@@ -153,6 +153,7 @@ body.fan13 .panel{box-shadow:inset 0 3px 0 var(--c13)}
 .bu .vs b{font:700 2rem/1 var(--display);font-variant-numeric:tabular-nums}
 .bu .vs .r{text-align:right}
 .bu pre{font:400 .72rem/1.35 var(--mono);white-space:pre;overflow-x:auto;max-height:420px;margin:0;padding:10px;border-radius:6px;background:var(--panel);border:1px solid var(--line)}
+.seclvl th:nth-child(n+2):nth-child(-n+5){display:none}
 td.secinfo{text-align:left;color:var(--muted);font-size:.8rem;white-space:normal}
 </style>
 </head>
@@ -429,6 +430,7 @@ td.secinfo{text-align:left;color:var(--muted);font-size:.8rem;white-space:normal
   }
   function renderLevel(){
     renderCrumbs();
+    const tb=$("lista").closest("table"); if(tb) tb.classList.toggle("seclvl",lvl.k==="zona");
     const q=($("busca").value||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase();
     let list=rows.filter(r=>!q||String(r.nm).normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().includes(q));
     list.sort((x,y)=>{const a=x[sortK],b=y[sortK];return (typeof a==="string"?a.localeCompare(b,"pt-BR"):(a-b))*sortDir});
@@ -458,6 +460,62 @@ td.secinfo{text-align:left;color:var(--muted);font-size:.8rem;white-space:normal
   });
   $("busca").addEventListener("input",renderLevel);
   document.querySelectorAll("th[data-k]").forEach(th=>th.addEventListener("click",()=>{const k=th.dataset.k;sortDir=sortK===k?-sortDir:(k==="nm"?1:-1);sortK=k;renderLevel()}));
+
+  // ---------- decodificador do boletim de urna (BER/ASN.1, especificação v2 do TSE) ----------
+  function berNos(u8,s,e){
+    const out=[];let p=s;
+    while(p<e){
+      const t0=u8[p++];let num=t0&31;
+      if(num===31){num=0;let b;do{b=u8[p++];num=num*128+(b&127)}while(b&128)}
+      let len=u8[p++];
+      if(len&128){const n=len&127;len=0;for(let i=0;i<n;i++)len=len*256+u8[p++]}
+      const no={cls:t0>>6,con:!!(t0&32),num,s:p,e:p+len};
+      if(no.con) no.k=berNos(u8,p,p+len);
+      p+=len; out.push(no);
+    }
+    return out;
+  }
+  function berInt(u8,no){let v=0;for(let i=no.s;i<no.e;i++)v=v*256+u8[i];if(no.e>no.s&&(u8[no.s]&128))v-=Math.pow(256,no.e-no.s);return v}
+  const ehSeq=n=>n&&n.con&&n.cls===0&&n.num===16, ehInt=n=>n&&!n.con&&n.cls===0&&(n.num===2||n.num===10);
+  function lerBU(buf,idEleicao){
+    const u8=new Uint8Array(buf);
+    const env=berNos(u8,0,u8.length)[0];
+    if(!env||!env.k) throw new Error("arquivo do boletim inválido");
+    const oct=[...env.k].reverse().find(n=>n.cls===0&&n.num===4&&!n.con);
+    const raiz=oct?berNos(u8,oct.s,oct.e)[0]:env;
+    // procura o resultado da eleição pedida: SEQUENCE que começa com idEleicao e 3 INTEGERs
+    let ele=null;
+    (function busca(n){
+      if(ele||!n||!n.k) return;
+      const k=n.k;
+      if(ehSeq(n)&&k.length>=5&&ehInt(k[0])&&ehInt(k[1])&&ehInt(k[2])&&ehInt(k[3])&&ehSeq(k[4])&&berInt(u8,k[0])===Number(idEleicao)){ele=n;return}
+      k.forEach(busca);
+    })(raiz);
+    if(!ele) throw new Error("o boletim não tem a votação para presidente desta eleição");
+    const v={"13":0,"22":0,brancos:0,nulos:0,aptos:berInt(u8,ele.k[1]),comp:null};
+    ele.k[4].k.forEach(rv=>{
+      if(!rv.k) return;
+      if(ehInt(rv.k[1])&&v.comp==null) v.comp=berInt(u8,rv.k[1]);
+      const tvcs=rv.k.find((x,i)=>i>=2&&ehSeq(x));
+      (tvcs&&tvcs.k||[]).forEach(tvc=>{
+        const cod=tvc.k&&tvc.k[0];
+        if(!cod||cod.cls!==2||cod.num!==1||berInt(u8,cod)!==1) return; // 1 = presidente
+        const lista=tvc.k.find((x,i)=>i>=1&&ehSeq(x));
+        (lista&&lista.k||[]).forEach(vv=>{
+          let tipo=null,qtd=0,cand=null;
+          (vv.k||[]).forEach(c=>{
+            if(c.cls!==2) return;
+            if(c.num===1&&!c.con) tipo=berInt(u8,c);
+            else if(c.num===2&&!c.con) qtd=berInt(u8,c);
+            else if(c.num===3&&c.con&&c.k&&c.k[1]) cand=berInt(u8,c.k[1]);
+          });
+          if(tipo===2) v.brancos+=qtd; else if(tipo===3) v.nulos+=qtd;
+          else if(cand!=null){const n=String(cand);v[n]=(v[n]||0)+qtd}
+        });
+      });
+    });
+    return v;
+  }
 
   // ---------- seções e boletim de urna ----------
   const URNA=()=>`${BASE}arquivo-urna/${PLEITO[EL]}/`;
@@ -494,18 +552,26 @@ td.secinfo{text-align:left;color:var(--muted);font-size:.8rem;white-space:normal
       const h=hs.filter(x=>/^totalizad/i.test(x.st||"")).pop()||hs.pop();
       if(!h){box.innerHTML=titulo+`<p class="note">Seção sem boletim publicado. Situação no TSE: ${esc(aux.st||"—")}.</p>`;fechar();return}
       const nomes=[];(h.arq||[]).forEach(a=>{if(a&&a.nm)nomes.push(a.nm)});(h.nmarq||[]).forEach(n=>nomes.push(n));
+      const buArq=nomes.find(n=>/(-bu\.dat|\.bu)$/i.test(n))||nomes.find(n=>/(-busa\.dat|\.busa)$/i.test(n));
       const img=nomes.find(n=>/imgbu/i.test(n));
-      if(!img){box.innerHTML=titulo+`<p class="note">O TSE publicou o boletim desta seção só no formato binário, sem a versão em texto. Situação: ${esc(h.st||aux.st||"—")}.</p>`;fechar();return}
-      const r=await fetch(dir+h.hash+"/"+img,{cache:"no-cache"}); if(!r.ok) throw new Error("HTTP "+r.status);
-      const txt=limparBU(new TextDecoder("windows-1252").decode(await r.arrayBuffer()));
-      const v=lerVotos(txt);
-      const tem=v["13"]!=null&&v["22"]!=null;
-      const nomv=(v["13"]||0)+(v["22"]||0);
-      box.innerHTML=titulo+(tem?`<div class="vs"><div><span class="label">Lula · 13</span><b style="color:var(--c13)">${fmt(v["13"])}</b><small class="note">${nomv?pct(v["13"]/nomv*100):"—"}</small></div>
-        <div class="r"><span class="label">Flávio · 22</span><b style="color:var(--c22)">${fmt(v["22"])}</b><small class="note">${nomv?pct(v["22"]/nomv*100):"—"}</small></div></div>
-        <p class="note">${[v.aptos!=null?"Eleitores aptos: "+fmt(v.aptos):"",v.comp!=null?"Comparecimento: "+fmt(v.comp):"",v.brancos!=null?"Brancos: "+fmt(v.brancos):"",v.nulos!=null?"Nulos: "+fmt(v.nulos):""].filter(Boolean).join(" · ")}</p>`
-        :`<p class="note">Não consegui ler os votos automaticamente. Abaixo está o boletim como o TSE publicou.</p>`)+
-        `<details${tem?"":" open"}><summary class="label">Boletim de urna (texto do TSE)</summary><pre>${esc(txt)}</pre></details>`;
+      let v=null, txt="";
+      if(buArq){
+        const r=await fetch(dir+h.hash+"/"+buArq,{cache:"no-cache"}); if(!r.ok) throw new Error("HTTP "+r.status);
+        v=lerBU(await r.arrayBuffer(),EL);
+      } else if(img){
+        const r=await fetch(dir+h.hash+"/"+img,{cache:"no-cache"}); if(!r.ok) throw new Error("HTTP "+r.status);
+        txt=limparBU(new TextDecoder("windows-1252").decode(await r.arrayBuffer()));
+        v=lerVotos(txt); if(v["13"]==null||v["22"]==null) v=null;
+      } else {
+        box.innerHTML=titulo+`<p class="note">O TSE ainda não publicou o boletim desta seção. Situação: ${esc(h.st||aux.st||"—")}.</p>`;fechar();return;
+      }
+      const nomv=v?(v["13"]||0)+(v["22"]||0):0;
+      box.innerHTML=titulo+(v?`<div class="vs"><div><span class="label">Lula · 13</span><b style="color:var(--c13)">${fmt(v["13"]||0)}</b><small class="note">${nomv?pct((v["13"]||0)/nomv*100):"—"}</small></div>
+        <div class="r"><span class="label">Flávio · 22</span><b style="color:var(--c22)">${fmt(v["22"]||0)}</b><small class="note">${nomv?pct((v["22"]||0)/nomv*100):"—"}</small></div></div>
+        <p class="note">${[v.aptos!=null?"Eleitores aptos: "+fmt(v.aptos):"",v.comp!=null?"Comparecimento: "+fmt(v.comp):"",v.brancos!=null?"Brancos: "+fmt(v.brancos):"",v.nulos!=null?"Nulos: "+fmt(v.nulos):""].filter(Boolean).join(" · ")}</p>
+        <p class="note">Fonte: boletim de urna da seção publicado pelo TSE${buArq?" ("+esc(buArq)+")":""}.</p>`
+        :`<p class="note">Não consegui ler os votos automaticamente.</p>`)+
+        (txt?`<details${v?"":" open"}><summary class="label">Boletim de urna (texto do TSE)</summary><pre>${esc(txt)}</pre></details>`:"");
       fechar();
     }catch(e){
       box.innerHTML=titulo+`<p class="note">Não consegui abrir o boletim desta seção (${esc(e.message)}). Se a seção ainda não foi apurada, o arquivo aparece depois.</p>`;fechar();
