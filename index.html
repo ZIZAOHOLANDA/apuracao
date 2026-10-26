@@ -377,13 +377,15 @@ body.fan13 .panel{box-shadow:inset 0 3px 0 var(--c13)}
         $("lvlnote").textContent=`${rows.length} de ${mus.length} municípios lidos · atualizam a cada 3 min enquanto esta lista estiver aberta.`;
       } else if(lvl.k==="mun"){
         const zonas=lvl.zonas||[];
-        if(zonaOff||!zonas.length){rows=[];$("lvlmsg").hidden=false;$("lvlmsg").textContent=zonaOff?"O TSE não está publicando resultado por zona eleitoral nesta eleição. O município é o menor nível disponível ao vivo.":"Sem lista de zonas para este município.";$("lvlnote").textContent="";}
+        if(!zonas.length){rows=[];$("lvlmsg").hidden=false;$("lvlmsg").textContent="O TSE não informou as zonas deste município.";$("lvlnote").textContent="";}
         else{
-          try{await getJSON(fileU(EL,lvl.uf,lvl.cd,zonas[0]))}
-          catch(e){if(e.status===404||e.status===403){zonaOff=true;return loadLevel()}throw e}
-          const res=await pool(zonas,4,async z=>{const r=parse(await getJSON(fileU(EL,lvl.uf,lvl.cd,z)));return rowFrom(z,"Zona "+Number(z),r,false)});
+          // busca todas as zonas; uma zona sem arquivo não derruba as outras
+          $("lvlnote").textContent=`Carregando ${zonas.length} zona(s)…`;
+          const res=await pool(zonas,4,async z=>{const r=parse(await getJSON(fileU(EL,lvl.uf,lvl.cd,z)));return rowFrom(z,"Zona "+z,r,false)});
           rows=res.filter(Boolean);
-          $("lvlnote").textContent=`${rows.length} zona(s).`;
+          const faltam=zonas.length-rows.length;
+          if(!rows.length){$("lvlmsg").hidden=false;$("lvlmsg").textContent="O TSE ainda não publicou resultado por zona para este município.";}
+          $("lvlnote").textContent=`${rows.length} de ${zonas.length} zona(s) com resultado`+(faltam?` · ${faltam} sem arquivo no TSE`:"")+".";
         }
       }
     }catch(e){
